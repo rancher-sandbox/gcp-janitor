@@ -1,0 +1,52 @@
+name: Release
+
+on:
+  push:
+    tags:
+    - 'v*'
+
+jobs:
+  publish-image:
+    permissions:
+      contents: read
+      id-token: write
+    runs-on: runs-on,runner=8cpu-linux-x64,run-id=${{ github.run_id }},image=ubuntu22-full-x64
+    steps:
+    - name: Check out code
+      uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+    - name: "Read secrets"
+      uses: rancher-eio/read-vault-secrets@main
+      with:
+        secrets: |
+          secret/data/github/repo/${{ github.repository }}/dockerhub/${{ github.repository_owner }}/credentials username | DOCKER_USERNAME ;
+          secret/data/github/repo/${{ github.repository }}/dockerhub/${{ github.repository_owner }}/credentials password | DOCKER_PASSWORD ;
+
+    - name: Push image
+      uses: rancher/ecm-distro-tools/actions/publish-image@master
+      with:
+        image: gcp-janitor
+        tag: ${{ github.ref_name }}
+        platforms: linux/amd64,linux/arm64
+
+        public-repo: rancher-sandbox
+        public-username: ${{ env.DOCKER_USERNAME }}
+        public-password: ${{ env.DOCKER_PASSWORD }}
+        make-target: push-image
+        push-to-prime: false
+
+  release:
+    name: Create release
+    needs: publish-image
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check out code
+      uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      with:
+        fetch-depth: 0
+    - name: Create GH release
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: gh release create ${{ github.ref_name }} --generate-notes
